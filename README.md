@@ -1,4 +1,4 @@
-# Gobang v项目版
+# Gobang 项目版
 
 Vue 3 + Spring Boot + MySQL 的五子棋 AI 对战项目。
 
