@@ -1,0 +1,12 @@
+{
+  "name": "gobang-report-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generate software practice report for Gobang game",
+  "dependencies": {
+    "adm-zip": "^0.5.18",
+    "docx": "^9.7.1",
+    "pptxgenjs": "^4.0.1",
+    "sharp": "^0.35.3"
+  }
+}

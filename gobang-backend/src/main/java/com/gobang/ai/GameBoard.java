@@ -17,6 +17,11 @@ public class GameBoard {
     public static final int OBSTACLE = 4;  // 假山
     public static final int WATER = 5;     // 水潭
 
+    // 动态棋盘模式区块状态常量
+    public static final int BLOCK_LOCKED = 0;   // 锁定（不可落子）
+    public static final int BLOCK_UNLOCKED = 1; // 已解锁（可落子）
+    public static final int BLOCK_SEALED = 2;   // 已封印（不可落子）
+
     private final int size;
     private int[][] board;
     private int[][] terrain;     // 地形数组: 0=无, 4=假山, 5=水潭
@@ -25,6 +30,10 @@ public class GameBoard {
     private int moveCount;
     private boolean paused;
     private final Random random = new Random();
+    
+    // 动态棋盘模式相关字段
+    private boolean dynamicMode = false;
+    private int[][] blockStates;  // 5x5区块状态数组
 
     /** 地形变化记录 */
     public static class TerrainRecord {
@@ -50,6 +59,83 @@ public class GameBoard {
         paused = false;
     }
 
+    /**
+     * Creates an isolated deep copy for AI search and turn snapshots.
+     * None of the mutable arrays or history records are shared with the source board.
+     */
+    public GameBoard copy() {
+        GameBoard copy = new GameBoard(size);
+        copy.board = copyMatrix(board);
+        copy.terrain = copyMatrix(terrain);
+        copy.history = copyPositions(history);
+        copy.terrainHistory = new ArrayList<>();
+        for (TerrainRecord record : terrainHistory) {
+            copy.terrainHistory.add(new TerrainRecord(record.row, record.col, record.oldTerrain));
+        }
+        copy.moveCount = moveCount;
+        copy.paused = paused;
+        copy.dynamicMode = dynamicMode;
+        copy.blockStates = copyMatrix(blockStates);
+        return copy;
+    }
+
+    /** A version-independent representation used for durable game snapshots. */
+    public BoardState exportState() {
+        List<TerrainState> terrainRecords = new ArrayList<>(terrainHistory.size());
+        for (TerrainRecord record : terrainHistory) {
+            terrainRecords.add(new TerrainState(record.row, record.col, record.oldTerrain));
+        }
+        return new BoardState(size, copyMatrix(board), copyMatrix(terrain),
+                copyPositions(history), terrainRecords, moveCount, paused,
+                dynamicMode, copyMatrix(blockStates));
+    }
+
+    public static GameBoard fromState(BoardState state) {
+        if (state == null || state.size() < 1 || state.size() > 25
+                || state.board().length != state.size()
+                || state.terrain().length != state.size()) {
+            throw new IllegalArgumentException("Invalid saved board state");
+        }
+        GameBoard restored = new GameBoard(state.size());
+        restored.board = copyMatrix(state.board());
+        restored.terrain = copyMatrix(state.terrain());
+        restored.history = copyPositions(state.history());
+        restored.terrainHistory = new ArrayList<>();
+        for (TerrainState record : state.terrainHistory()) {
+            restored.terrainHistory.add(new TerrainRecord(
+                    record.row(), record.col(), record.oldTerrain()));
+        }
+        restored.moveCount = state.moveCount();
+        restored.paused = state.paused();
+        restored.dynamicMode = state.dynamicMode();
+        restored.blockStates = copyMatrix(state.blockStates());
+        return restored;
+    }
+
+    public record TerrainState(int row, int col, int oldTerrain) {}
+
+    public record BoardState(
+            int size, int[][] board, int[][] terrain, List<int[]> history,
+            List<TerrainState> terrainHistory, int moveCount, boolean paused,
+            boolean dynamicMode, int[][] blockStates) {}
+
+    private static int[][] copyMatrix(int[][] source) {
+        if (source == null) return null;
+        int[][] result = new int[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            result[i] = source[i].clone();
+        }
+        return result;
+    }
+
+    private static List<int[]> copyPositions(List<int[]> source) {
+        List<int[]> result = new ArrayList<>(source.size());
+        for (int[] position : source) {
+            result.add(position.clone());
+        }
+        return result;
+    }
+
     public GameBoard(GameBoard other) {
         this.size = other.size;
         board = new int[size][size];
@@ -62,15 +148,138 @@ public class GameBoard {
         terrainHistory = new ArrayList<>(other.terrainHistory);
         moveCount = other.moveCount;
         paused = other.paused;
+        dynamicMode = other.dynamicMode;
+        if (other.blockStates != null) {
+            blockStates = new int[5][5];
+            for (int i = 0; i < 5; i++) {
+                System.arraycopy(other.blockStates[i], 0, blockStates[i], 0, 5);
+            }
+        }
     }
 
     /** 获取棋盘尺寸 */
     public int getSize() { return size; }
 
+    // ==================== 动态棋盘模式方法 ====================
+
+    /** 初始化动态棋盘模式 */
+    public void initDynamicBlocks() {
+        dynamicMode = true;
+        blockStates = new int[5][5];
+        // 中心区块(2,2)解锁，其余锁定
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                blockStates[i][j] = (i == 2 && j == 2) ? BLOCK_UNLOCKED : BLOCK_LOCKED;
+            }
+        }
+    }
+
+    /** 检查某位置是否在可落子的区块内 */
+    public boolean isBlockPlayable(int row, int col) {
+        if (!dynamicMode) return true;
+        int blockRow = row / 3;
+        int blockCol = col / 3;
+        if (blockRow < 0 || blockRow >= 5 || blockCol < 0 || blockCol >= 5) return false;
+        return blockStates[blockRow][blockCol] == BLOCK_UNLOCKED;
+    }
+
+    /** 解锁指定区块（可解锁锁定区块或解除封印区块） */
+    public boolean unlockBlock(int blockRow, int blockCol) {
+        if (!dynamicMode) return false;
+        if (blockRow < 0 || blockRow >= 5 || blockCol < 0 || blockCol >= 5) return false;
+        if (blockStates[blockRow][blockCol] != BLOCK_LOCKED && blockStates[blockRow][blockCol] != BLOCK_SEALED) return false;
+        blockStates[blockRow][blockCol] = BLOCK_UNLOCKED;
+        return true;
+    }
+
+    /** 随机封印一个已解锁的区块 */
+    public boolean sealRandomBlock() {
+        if (!dynamicMode) return false;
+        
+        // 收集所有已解锁且非空的区块
+        List<int[]> unlockedBlocks = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                if (blockStates[i][j] == BLOCK_UNLOCKED) {
+                    // 检查区块内是否有空位
+                    boolean hasEmpty = false;
+                    for (int r = i * 3; r < i * 3 + 3 && r < size; r++) {
+                        for (int c = j * 3; c < j * 3 + 3 && c < size; c++) {
+                            if (board[r][c] == EMPTY) {
+                                hasEmpty = true;
+                                break;
+                            }
+                        }
+                        if (hasEmpty) break;
+                    }
+                    if (hasEmpty) {
+                        unlockedBlocks.add(new int[]{i, j});
+                    }
+                }
+            }
+        }
+        
+        if (unlockedBlocks.isEmpty()) return false;
+        
+        int[] target = unlockedBlocks.get(random.nextInt(unlockedBlocks.size()));
+        blockStates[target[0]][target[1]] = BLOCK_SEALED;
+        return true;
+    }
+
+    /** AI 随机解锁一个锁定或封印的区块（用于 AI 获得解锁令牌时自动使用） */
+    public int[] unlockRandomBlock() {
+        if (!dynamicMode) return null;
+
+        // 收集所有可被解锁的区块（锁定或封印状态）
+        List<int[]> unlockableBlocks = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                if (blockStates[i][j] == BLOCK_LOCKED || blockStates[i][j] == BLOCK_SEALED) {
+                    unlockableBlocks.add(new int[]{i, j});
+                }
+            }
+        }
+
+        if (unlockableBlocks.isEmpty()) return null;
+
+        int[] target = unlockableBlocks.get(random.nextInt(unlockableBlocks.size()));
+        blockStates[target[0]][target[1]] = BLOCK_UNLOCKED;
+        return target;
+    }
+
+    /** 获取区块状态数组 */
+    public int[][] getBlockStates() {
+        if (!dynamicMode || blockStates == null) return null;
+        int[][] copy = new int[5][5];
+        for (int i = 0; i < 5; i++) {
+            System.arraycopy(blockStates[i], 0, copy[i], 0, 5);
+        }
+        return copy;
+    }
+
+    /** 检查是否处于动态棋盘模式 */
+    public boolean isDynamicMode() { return dynamicMode; }
+
+    /** 动态模式落子（检查区块状态） */
+    public boolean placeStoneDynamic(int row, int col, int stone) {
+        if (!dynamicMode) return placeStone(row, col, stone);
+        if (!isStoneColor(stone)) return false;
+        if (!isValidPosition(row, col) || board[row][col] != EMPTY) return false;
+        if (!isBlockPlayable(row, col)) return false;
+        
+        board[row][col] = stone;
+        history.add(new int[]{row, col});
+        moveCount++;
+        return true;
+    }
+
+    // ==================== 动态棋盘模式方法结束 ====================
+
     /**
      * 落子（普通模式）。障碍物模式请使用 placeStoneObstacle()。
      */
     public boolean placeStone(int row, int col, int stone) {
+        if (!isStoneColor(stone)) return false;
         if (!isValidPosition(row, col) || board[row][col] != EMPTY) return false;
         board[row][col] = stone;
         history.add(new int[]{row, col});
@@ -84,6 +293,7 @@ public class GameBoard {
      * @return 实际落子位置 [row, col]，落子失败返回 null
      */
     public int[] placeStoneObstacle(int row, int col, int stone) {
+        if (!isStoneColor(stone)) return null;
         if (!isValidPosition(row, col)) return null;
 
         // 假山处不能落子
@@ -120,7 +330,10 @@ public class GameBoard {
         int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
         for (int[] d : dirs) {
             int nr = row + d[0], nc = col + d[1];
-            if (isValidPosition(nr, nc) && board[nr][nc] == EMPTY) {
+            if (isValidPosition(nr, nc)
+                    && board[nr][nc] == EMPTY
+                    && terrain[nr][nc] != OBSTACLE
+                    && isBlockPlayable(nr, nc)) {
                 empties.add(new int[]{nr, nc});
             }
         }
@@ -253,7 +466,7 @@ public class GameBoard {
         if (!isValidPosition(row, col)) return false;
         if (board[row][col] != EMPTY) return false;
         if (terrain[row][col] == OBSTACLE) return false;  // 假山不可落子
-        return true;
+        return isBlockPlayable(row, col);
     }
 
     public boolean isValidPosition(int row, int col) {
@@ -296,6 +509,7 @@ public class GameBoard {
      * 检查指定位置是否形成五连
      */
     public boolean checkWin(int row, int col) {
+        if (!isValidPosition(row, col)) return false;
         int stone = board[row][col];
         if (stone == EMPTY) return false;
 
@@ -324,6 +538,7 @@ public class GameBoard {
      */
     public boolean isForbidden(int row, int col, int stone) {
         if (stone != BLACK) return false;
+        if (!isValidPosition(row, col) || board[row][col] != EMPTY) return false;
 
         // 模拟落子来检查
         board[row][col] = BLACK;
@@ -341,6 +556,10 @@ public class GameBoard {
         board[row][col] = EMPTY;
 
         return openThrees >= 2 || openFours >= 2;
+    }
+
+    private boolean isStoneColor(int stone) {
+        return stone == BLACK || stone == WHITE || stone == GRAY;
     }
 
     private boolean checkLongChain(int row, int col) {

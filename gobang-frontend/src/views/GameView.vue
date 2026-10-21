@@ -8,7 +8,8 @@
       <button class="btn-back" @click="goBack">← 返回大厅</button>
       <h1>五子棋 · {{ difficultyLabel }}</h1>
       <div class="header-info">
-        <span>悔棋: {{ undoRemaining }}/2</span>
+        <span class="header-turn" :class="statusClass">{{ turnLabel || message }}</span>
+        <span>悔棋 {{ undoRemaining }}/{{ undoLimit }}</span>
         <div class="music-control">
           <button class="music-btn" @click="toggleMusic" :title="musicPlaying ? '暂停音乐' : '播放音乐'">
             <svg v-if="musicPlaying" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -34,7 +35,96 @@
     </header>
 
     <div class="game-area">
-      <div class="board-wrapper">
+        <div class="board-wrapper">
+        <!-- 棋罐装饰 - 圆形木罐 -->
+        <div class="stone-boxes">
+          <!-- 双人模式：对角线两个角 -->
+          <template v-if="gameMode === 'TWO' || gameMode === 'OBSTACLE'">
+            <!-- 左上角 - 黑棋罐 -->
+            <div class="stone-jar corner-tl">
+              <div class="jar-lid"></div>
+              <div class="jar-body">
+                <div class="jar-rim"></div>
+                <div class="jar-content">
+                  <div class="jar-stones">
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右下角 - 白棋罐 -->
+            <div class="stone-jar corner-br">
+              <div class="jar-lid"></div>
+              <div class="jar-body">
+                <div class="jar-rim"></div>
+                <div class="jar-content">
+                  <div class="jar-stones">
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 三人模式：三个角 -->
+          <template v-if="gameMode === 'THREE' || gameMode === 'THREE_OBSTACLE'">
+            <!-- 左上角 - 黑棋罐 -->
+            <div class="stone-jar corner-tl">
+              <div class="jar-lid"></div>
+              <div class="jar-body">
+                <div class="jar-rim"></div>
+                <div class="jar-content">
+                  <div class="jar-stones">
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                    <div class="jar-stone black"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右上角 - 白棋罐 -->
+            <div class="stone-jar corner-tr">
+              <div class="jar-lid"></div>
+              <div class="jar-body">
+                <div class="jar-rim"></div>
+                <div class="jar-content">
+                  <div class="jar-stones">
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                    <div class="jar-stone white"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 左下角 - 灰棋罐 -->
+            <div class="stone-jar corner-bl">
+              <div class="jar-lid"></div>
+              <div class="jar-body">
+                <div class="jar-rim"></div>
+                <div class="jar-content">
+                  <div class="jar-stones">
+                    <div class="jar-stone gray"></div>
+                    <div class="jar-stone gray"></div>
+                    <div class="jar-stone gray"></div>
+                    <div class="jar-stone gray"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
         <div class="board-container">
           <!-- 对话气泡 -->
           <div v-if="showBubble && currentBubble" class="bubble-wrapper">
@@ -51,6 +141,7 @@
             @click="handleClick"
             @mousemove="handleMouseMove"
             @mouseleave="hoverPos = null"
+            aria-label="五子棋棋盘，点击交叉点落子"
           ></canvas>
         </div>
       </div>
@@ -70,7 +161,7 @@
             ▶ 继续
           </button>
           <button
-            v-if="['PLAYER_TURN', 'GRAY_TURN', 'AI_WIN', 'WHITE_WIN', 'GRAY_WIN'].includes(status) && undoRemaining > 0"
+              v-if="['PLAYER_TURN', 'GRAY_TURN'].includes(status) && undoRemaining > 0"
             class="btn-ctrl undo"
             @click="doUndo"
             :disabled="undoLoading"
@@ -83,6 +174,14 @@
             @click="goBack"
           >
             🆕 新游戏
+          </button>
+          <!-- 动态棋盘模式：解锁区块按钮 -->
+          <button
+            v-if="gameMode === 'DYNAMIC' && unlockTokens > 0 && status === 'PLAYER_TURN'"
+            class="btn-ctrl unlock"
+            @click="doUnlockBlock"
+          >
+            🔓 解锁区块 ({{ unlockTokens }})
           </button>
         </div>
 
@@ -112,11 +211,44 @@
         </div>
       </div>
     </div>
+
+    <!-- 游戏结束弹窗 -->
+    <div v-if="gameOver" class="result-overlay" @click.self="closeResult">
+      <div class="result-modal" :class="resultType">
+        <div class="result-icon">{{ resultIcon }}</div>
+        <div class="result-title">{{ resultTitle }}</div>
+        <div class="result-subtitle">{{ resultSubtitle }}</div>
+        <div class="result-buttons">
+          <button class="result-btn secondary" @click="goBack">🏠 返回大厅</button>
+          <button class="result-btn primary" @click="restartGame">🔄 再来一局</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 获得解锁令牌弹窗 -->
+    <div v-if="showUnlockNotify" class="notify-overlay" @click="dismissUnlockNotify">
+      <div class="notify-modal">
+        <div class="notify-icon">🔓</div>
+        <div class="notify-title">获得解锁机会！</div>
+        <div class="notify-text">你获得了 1 次解锁区块的机会，当前可用：<strong>{{ unlockNotifyTokens }}</strong> 次</div>
+        <div class="notify-hint">点击任意处关闭</div>
+      </div>
+    </div>
+
+    <!-- AI自动解锁区块弹窗 -->
+    <div v-if="showAiUnlockNotify" class="notify-overlay" @click="dismissAiUnlockNotify">
+      <div class="notify-modal ai-unlock">
+        <div class="notify-icon">🤖</div>
+        <div class="notify-title">AI 解锁了区块！</div>
+        <div class="notify-text">{{ aiUnlockNotifyMsg }}</div>
+        <div class="notify-hint">点击任意处关闭</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { gameApi } from '../api'
 
@@ -279,6 +411,17 @@ const boardSize = computed(() => gameMode.value === 'THREE' || gameMode.value ==
 const cellSize = computed(() => gameMode.value === 'THREE' || gameMode.value === 'THREE_OBSTACLE' ? 22 : 36)
 const stoneRadius = computed(() => gameMode.value === 'THREE' || gameMode.value === 'THREE_OBSTACLE' ? 9 : 15)
 const canvasSize = computed(() => PADDING * 2 + cellSize.value * (boardSize.value - 1))
+const undoLimit = computed(() => ['OBSTACLE', 'THREE_OBSTACLE'].includes(gameMode.value) ? 3 : 2)
+
+// 动态棋盘模式相关状态
+const blockStates = ref(null)  // 区块状态数组（5x5）
+const unlockTokens = ref(0)    // 解锁令牌数
+const showBlockSelector = ref(false)  // 是否显示区块选择器
+const showUnlockNotify = ref(false)   // 获得解锁令牌弹窗
+const unlockNotifyTokens = ref(0)     // 弹窗中显示的令牌数
+const showAiUnlockNotify = ref(false) // AI自动解锁弹窗
+const aiUnlockNotifyMsg = ref('')     // AI解锁弹窗消息
+let unlockNotifyTimer = null          // 弹窗自动关闭计时器
 
 // 星位点（动态计算）
 const starPoints = computed(() => {
@@ -432,6 +575,7 @@ function clearAllTimers() {
   if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null }
   if (randomTimer) { clearTimeout(randomTimer); randomTimer = null }
   if (bubbleTimer) { clearTimeout(bubbleTimer); bubbleTimer = null }
+  if (unlockNotifyTimer) { clearTimeout(unlockNotifyTimer); unlockNotifyTimer = null }
   clearSlideAnim()
 }
 
@@ -445,13 +589,14 @@ const difficultyLabel = computed(() => {
 const statusClass = computed(() => {
   const map = {
     PLAYER_WIN: 'win', AI_WIN: 'lose', WHITE_WIN: 'lose', GRAY_WIN: 'lose',
-    DRAW: 'draw', AI_THINKING: 'thinking', GRAY_TURN: 'thinking', PAUSED: 'paused'
+    DRAW: 'draw', AI_TURN: 'thinking', AI_THINKING: 'thinking',
+    GRAY_TURN: 'thinking', PAUSED: 'paused'
   }
   return map[status.value] || ''
 })
 const statusIcon = computed(() => {
   const map = {
-    PLAYER_TURN: '🤔', AI_THINKING: '💭', GRAY_TURN: '💭',
+    PLAYER_TURN: '🤔', AI_TURN: '💭', AI_THINKING: '💭', GRAY_TURN: '💭',
     PLAYER_WIN: '🎉', AI_WIN: '😢', WHITE_WIN: '🤖', GRAY_WIN: '🤖',
     DRAW: '🤝', PAUSED: '⏸'
   }
@@ -460,11 +605,113 @@ const statusIcon = computed(() => {
 const turnLabel = computed(() => {
   const map = {
     PLAYER_TURN: '⚫ 你的回合（黑子）',
+    AI_TURN: '⚪ 白子AI 回合',
     AI_THINKING: '⚪ 白子AI 回合',
     GRAY_TURN: '🔘 灰子AI 回合',
   }
   return map[status.value] || ''
 })
+
+// 游戏结束弹窗相关
+const gameOver = computed(() => {
+  return ['PLAYER_WIN', 'AI_WIN', 'WHITE_WIN', 'GRAY_WIN', 'DRAW'].includes(status.value)
+})
+const resultType = computed(() => {
+  if (status.value === 'PLAYER_WIN') return 'win'
+  if (status.value === 'DRAW') return 'draw'
+  return 'lose'
+})
+const resultIcon = computed(() => {
+  const map = {
+    PLAYER_WIN: '🎉',
+    AI_WIN: '😢',
+    WHITE_WIN: '🤖',
+    GRAY_WIN: '🤖',
+    DRAW: '🤝',
+  }
+  return map[status.value] || '🎯'
+})
+const resultTitle = computed(() => {
+  const map = {
+    PLAYER_WIN: '你赢了！',
+    AI_WIN: '你输了',
+    WHITE_WIN: '你输了',
+    GRAY_WIN: '你输了',
+    DRAW: '平局',
+  }
+  return map[status.value] || ''
+})
+const resultSubtitle = computed(() => {
+  if (status.value === 'PLAYER_WIN') return '恭喜你击败了AI！'
+  if (status.value === 'DRAW') return '旗鼓相当，不分胜负'
+  return '下次再战，加油！'
+})
+
+function closeResult() {
+  // 弹窗点击背景关闭，但不改变游戏状态
+}
+async function restartGame() {
+  try {
+    const res = await gameApi.start(difficulty.value, gameMode.value)
+    if (res.code === 200) {
+      const data = res.data
+      // 同步 gameMode，防止前端状态不同步导致地形不渲染
+      if (data.gameMode) gameMode.value = data.gameMode
+      board.value = data.board
+      terrain.value = data.terrain || null
+      status.value = data.status
+      undoRemaining.value = data.undoRemaining
+      message.value = data.message || '请落子'
+      hoverPos.value = null
+      // 动态棋盘模式：重置区块状态和解锁令牌
+      if (gameMode.value === 'DYNAMIC') {
+        blockStates.value = data.blockStates
+        unlockTokens.value = data.unlockTokens || 0
+      }
+      dialogues.value = []
+      showBubble.value = false
+      clearAllTimers()
+      startRandomTimer()
+      startThinkTimer()
+      // 等待 Vue 完成 DOM 更新后再绘制，防止 canvas 被 Vue 响应式更新清空
+      await nextTick()
+      drawBoard()
+    }
+  } catch {
+    message.value = '系统维护中'
+  }
+}
+
+async function restoreFromServer() {
+  try {
+    const res = await gameApi.getState()
+    if (res.code !== 200) {
+      message.value = res.message || '棋局同步失败，请刷新页面'
+      return
+    }
+    const state = res.data
+    if (!state || state.status === 'ERROR') {
+      router.replace('/lobby')
+      return
+    }
+    if (state.gameMode) gameMode.value = state.gameMode
+    board.value = state.board
+    terrain.value = state.terrain || null
+    status.value = state.status
+    difficulty.value = state.difficulty || difficulty.value
+    undoRemaining.value = state.undoRemaining ?? undoRemaining.value
+    message.value = state.message || (state.status === 'PLAYER_TURN' ? '请落子' : '棋局已恢复')
+    blockStates.value = state.blockStates || null
+    unlockTokens.value = state.unlockTokens || 0
+    await nextTick()
+    drawBoard()
+    if (canvasRef.value && ['AI_TURN', 'GRAY_TURN'].includes(state.status)) {
+      await doAiMove()
+    }
+  } catch {
+    message.value = '棋局同步失败，请刷新页面'
+  }
+}
 
 onMounted(() => {
   // 先读取模式以确定棋盘大小
@@ -480,6 +727,11 @@ onMounted(() => {
     message.value = state.message || '请落子'
     // 从保存状态恢复 gameMode
     if (state.gameMode) gameMode.value = state.gameMode
+    // 动态棋盘模式：恢复区块状态和解锁令牌数
+    if (state.gameMode === 'DYNAMIC') {
+      blockStates.value = state.blockStates || null
+      unlockTokens.value = state.unlockTokens || 0
+    }
     sessionStorage.removeItem('gameState')
   } else {
     difficulty.value = sessionStorage.getItem('difficulty') || 'EASY'
@@ -497,6 +749,7 @@ onMounted(() => {
   }
   // 启动随机对话计时器
   startRandomTimer()
+  restoreFromServer()
 })
 
 onUnmounted(() => {
@@ -526,13 +779,33 @@ function drawBoard() {
   const cl = cellSize.value
   const sp = starPoints.value
 
-  // 背景 - 使用不透明颜色避免重影
-  ctx.fillStyle = '#d2b48c'
+  // 背景 - 灰色系（适配古风山水背景）
+  const bgGradient = ctx.createLinearGradient(0, 0, cs, cs)
+  bgGradient.addColorStop(0, '#8A8A8A')
+  bgGradient.addColorStop(0.3, '#9A9A9A')
+  bgGradient.addColorStop(0.5, '#A0A0A0')
+  bgGradient.addColorStop(0.7, '#9A9A9A')
+  bgGradient.addColorStop(1, '#8A8A8A')
+  ctx.fillStyle = bgGradient
   ctx.fillRect(0, 0, cs, cs)
 
-  // 网格线 - 匹配登录界面小棋盘的木质色调
-  ctx.strokeStyle = 'rgba(139, 90, 43, 0.4)'
-  ctx.lineWidth = bs === 25 ? 0.6 : 1
+  // 添加木纹纹理线条
+  ctx.strokeStyle = 'rgba(180, 150, 100, 0.15)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < cs; i += 15) {
+    ctx.beginPath()
+    ctx.moveTo(0, i + Math.sin(i * 0.05) * 3)
+    ctx.lineTo(cs, i + Math.sin(i * 0.05) * 3)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(i + Math.cos(i * 0.03) * 2, 0)
+    ctx.lineTo(i + Math.cos(i * 0.03) * 2, cs)
+    ctx.stroke()
+  }
+
+  // 网格线 - 深色细线（匹配图片风格）
+  ctx.strokeStyle = 'rgba(90, 60, 30, 0.6)'
+  ctx.lineWidth = bs === 25 ? 0.7 : 1
   for (let i = 0; i < bs; i++) {
     const pos = PADDING + i * cl
     ctx.beginPath()
@@ -545,8 +818,54 @@ function drawBoard() {
     ctx.stroke()
   }
 
-  // 星位
-  ctx.fillStyle = bs === 25 ? '#444' : '#333'
+  // 动态棋盘模式：绘制区块状态
+  if (gameMode.value === 'DYNAMIC' && blockStates.value) {
+    // 绘制区块边框（加粗）
+    ctx.strokeStyle = 'rgba(90, 60, 30, 0.8)'
+    ctx.lineWidth = 3
+    for (let i = 0; i <= 5; i++) {
+      const pos = PADDING + i * cl * 3
+      if (pos <= PADDING + cl * (bs - 1)) {
+        ctx.beginPath()
+        ctx.moveTo(pos, PADDING)
+        ctx.lineTo(pos, PADDING + cl * (bs - 1))
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(PADDING, pos)
+        ctx.lineTo(PADDING + cl * (bs - 1), pos)
+        ctx.stroke()
+      }
+    }
+
+    // 绘制锁定/封印区块的遮罩
+    // 区块边界位置：PADDING + i * 3 * cl （i = 0~4，共5条边界线形成5x5区块）
+    for (let br = 0; br < 5; br++) {
+      for (let bc = 0; bc < 5; bc++) {
+        if (blockStates.value[br][bc] === 0 || blockStates.value[br][bc] === 2) { // 锁定或封印
+          // 区块左上角坐标
+          const x = PADDING + bc * 3 * cl
+          const y = PADDING + br * 3 * cl
+          // 计算区块实际大小（考虑棋盘边界）
+          const maxPos = PADDING + (bs - 1) * cl  // 棋盘最右/下坐标
+          const blockEndX = PADDING + (bc + 1) * 3 * cl  // 区块理论结束位置
+          const blockEndY = PADDING + (br + 1) * 3 * cl
+          const sizeX = Math.min(blockEndX, maxPos) - x  // 实际宽度
+          const sizeY = Math.min(blockEndY, maxPos) - y  // 实际高度
+          
+          // 设置阴影颜色（半透明，网格线仍然可见）
+          ctx.fillStyle = blockStates.value[br][bc] === 0 
+            ? 'rgba(80, 80, 80, 0.6)'   // 锁定：深灰色
+            : 'rgba(255, 0, 0, 0.4)'   // 封印：红色
+          
+          // 绘制阴影矩形
+          ctx.fillRect(x, y, sizeX, sizeY)
+        }
+      }
+    }
+  }
+
+  // 星位 - 深棕色小圆点
+  ctx.fillStyle = 'rgba(70, 45, 20, 0.9)'
   sp.forEach(r => {
     sp.forEach(c => {
       ctx.beginPath()
@@ -761,7 +1080,8 @@ function getBoardPos(clientX, clientY) {
     // 检查是否接近交叉点
     const cx = PADDING + col * cl
     const cy = PADDING + row * cl
-    const threshold = stoneRadius.value + 1
+    // Match the visible cell on a scaled canvas, including narrow touch screens.
+    const threshold = cl / 2
     if (Math.abs(x - cx) < threshold && Math.abs(y - cy) < threshold) {
       return { r: row, c: col }
     }
@@ -776,9 +1096,37 @@ function handleMouseMove(e) {
 }
 
 async function handleClick(e) {
+  // 动态棋盘模式：区块选择处理
+  if (showBlockSelector.value) {
+    const pos = getBoardPos(e.clientX, e.clientY)
+    if (!pos) return
+    
+    const blockRow = Math.floor(pos.r / 3)
+    const blockCol = Math.floor(pos.c / 3)
+    
+    if (blockRow >= 0 && blockRow < 5 && blockCol >= 0 && blockCol < 5) {
+      if (blockStates.value && (blockStates.value[blockRow][blockCol] === 0 || blockStates.value[blockRow][blockCol] === 2)) {
+        await handleBlockClick(blockRow, blockCol)
+      } else {
+        message.value = '请选择锁定或已封印的区块'
+      }
+    }
+    return
+  }
+  
   if (status.value !== 'PLAYER_TURN') return
   const pos = getBoardPos(e.clientX, e.clientY)
   if (!pos) return
+  
+  // 动态棋盘模式：检查区块状态
+  if (gameMode.value === 'DYNAMIC') {
+    const blockRow = Math.floor(pos.r / 3)
+    const blockCol = Math.floor(pos.c / 3)
+    if (blockStates.value && blockStates.value[blockRow][blockCol] !== 1) {
+      message.value = '此区块未解锁或已被封印'
+      return
+    }
+  }
   
   // 假山处不能点击落子
   if (terrain.value && terrain.value[pos.r]?.[pos.c] === 4) return
@@ -805,6 +1153,12 @@ async function handleClick(e) {
       board.value = data.board
       terrain.value = data.terrain || null
       undoRemaining.value = data.undoRemaining
+      
+      // 动态棋盘模式：更新区块状态（令牌在AI回合发放）
+      if (gameMode.value === 'DYNAMIC') {
+        blockStates.value = data.blockStates
+        unlockTokens.value = data.unlockTokens || 0
+      }
 
       // 双人/障碍物模式：玩家落子后返回 AI_TURN，前端自动请求 AI 落子
       // 三人/三人障碍物模式：玩家落子后返回 GRAY_TURN，前端自动请求灰AI落子
@@ -879,6 +1233,10 @@ async function handleClick(e) {
 }
 
 async function doAiMove() {
+  // 记录AI响应前的状态（用于检测变化）
+  const oldBlockStates = blockStates.value ? JSON.parse(JSON.stringify(blockStates.value)) : null
+  const oldUnlockTokens = unlockTokens.value
+
   try {
     const res = await gameApi.aiMove()
     if (res.code === 200) {
@@ -888,6 +1246,46 @@ async function doAiMove() {
       status.value = data.status
       undoRemaining.value = data.undoRemaining
       message.value = data.message || ''
+
+      // 动态棋盘模式：每2回合（4步）发放令牌，在AI回合触发
+      if (gameMode.value === 'DYNAMIC') {
+        blockStates.value = data.blockStates
+        const newTokens = data.unlockTokens || 0
+        unlockTokens.value = newTokens
+
+        // 检测是否玩家获得了新令牌
+        if (newTokens > oldUnlockTokens && oldUnlockTokens >= 0) {
+          unlockNotifyTokens.value = newTokens
+          showUnlockNotify.value = true
+          if (unlockNotifyTimer) clearTimeout(unlockNotifyTimer)
+          unlockNotifyTimer = setTimeout(() => {
+            showUnlockNotify.value = false
+          }, 3500)
+        }
+
+        // 检测AI是否自动解锁了区块
+        if (oldBlockStates && data.blockStates) {
+          let aiUnlocked = false
+          let unlockedRow = -1, unlockedCol = -1
+          for (let i = 0; i < 5; i++) {
+            for (let j = 0; j < 5; j++) {
+              if ((oldBlockStates[i][j] === 0 || oldBlockStates[i][j] === 2) && data.blockStates[i][j] === 1) {
+                aiUnlocked = true
+                unlockedRow = i
+                unlockedCol = j
+              }
+            }
+          }
+          if (aiUnlocked) {
+            aiUnlockNotifyMsg.value = 'AI 自动解锁了区块(' + unlockedRow + ',' + unlockedCol + ')，现在可以在此区块落子了'
+            showAiUnlockNotify.value = true
+            if (unlockNotifyTimer) clearTimeout(unlockNotifyTimer)
+            unlockNotifyTimer = setTimeout(() => {
+              showAiUnlockNotify.value = false
+            }, 4000)
+          }
+        }
+      }
 
       // AI 落子后对话
       if (data.status === 'PLAYER_TURN') {
@@ -962,6 +1360,45 @@ async function doResume() {
   }
 }
 
+// 动态棋盘模式：关闭解锁通知弹窗
+function dismissUnlockNotify() {
+  showUnlockNotify.value = false
+  if (unlockNotifyTimer) clearTimeout(unlockNotifyTimer)
+}
+
+// 动态棋盘模式：关闭AI解锁通知弹窗
+function dismissAiUnlockNotify() {
+  showAiUnlockNotify.value = false
+  if (unlockNotifyTimer) clearTimeout(unlockNotifyTimer)
+}
+
+// 动态棋盘模式：解锁区块
+async function doUnlockBlock() {
+  showBlockSelector.value = true
+  message.value = '请点击要解锁的区块'
+  drawBoard()
+}
+
+// 动态棋盘模式：处理区块点击（解锁）
+async function handleBlockClick(blockRow, blockCol) {
+  if (!showBlockSelector.value) return
+  
+  try {
+    const res = await gameApi.unlockBlock(blockRow, blockCol)
+    if (res.code === 200) {
+      blockStates.value = res.data.blockStates
+      unlockTokens.value = res.data.unlockTokens
+      showBlockSelector.value = false
+      message.value = res.data.message || '区块解锁成功'
+      drawBoard()
+    } else {
+      message.value = res.message || '解锁失败'
+    }
+  } catch {
+    message.value = '系统维护中'
+  }
+}
+
 // 玩家发送快捷语
 function onPlayerPhrase(phrase) {
   showBubbleMsg('player', phrase)
@@ -977,7 +1414,7 @@ function goBack() {
 .game-page {
   min-height: 100vh;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 /* 古风山水背景图片 */
@@ -987,7 +1424,7 @@ function goBack() {
   left: 0;
   right: 0;
   bottom: 0;
-  background-image: url('/ancient-bg.webp');
+  background-image: url('/ink-landscape-v2.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -996,12 +1433,30 @@ function goBack() {
 
 /* 游戏棋盘容器 - 匹配登录界面小棋盘样式 */
 .board-wrapper {
-  padding: 10px;
-  background: rgba(139, 90, 43, 0.15);
-  border-radius: 8px;
-  border: 1px solid rgba(139, 90, 43, 0.25);
-  backdrop-filter: blur(5px);
+  padding: 15px;
+  background: linear-gradient(145deg, #6a6a6a 0%, #8a8a8a 20%, #9a9a9a 40%, #8a8a8a 60%, #6a6a6a 100%);
+  border-radius: 12px;
+  border: 3px solid #4a4a4a;
+  box-shadow:
+    inset 0 0 20px rgba(100, 100, 100, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 2px 10px rgba(80, 80, 80, 0.3);
   width: fit-content;
+  position: relative;
+  animation: floatBoard 3s ease-in-out infinite;
+}
+
+/* 边框装饰角落 */
+.board-wrapper::before {
+  content: '';
+  position: absolute;
+  top: -3px; left: -3px; right: -3px; bottom: -3px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  background: linear-gradient(135deg, #aaa, #888, #aaa) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 /* 背景遮罩层 */
@@ -1046,12 +1501,23 @@ header h1 {
   transition: all 0.3s;
 }
 .btn-back:hover { border-color: #d4a574; color: #d4a574; }
-.header-info { 
-  color: #888; 
+.header-info {
+  color: #e0d9d7;
   font-size: 13px; 
   display: flex;
   align-items: center;
   gap: 15px;
+}
+.header-turn {
+  max-width: 220px;
+  padding: 7px 10px;
+  border: 1px solid rgba(232, 196, 160, 0.3);
+  border-radius: 999px;
+  color: #f5dec0;
+  background: rgba(30, 25, 34, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 音乐控制 */
@@ -1111,6 +1577,8 @@ header h1 {
   padding: 30px 20px;
   position: relative;
   z-index: 10;
+  width: min(100%, 1040px);
+  margin: 0 auto;
 }
 
 .board-container {
@@ -1121,8 +1589,16 @@ header h1 {
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   padding: 5px;
   background: rgba(139, 90, 43, 0.15);
+  max-width: 100%;
 }
-canvas { display: block; cursor: pointer; }
+canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+}
 
 .side-panel {
   width: 220px;
@@ -1130,7 +1606,7 @@ canvas { display: block; cursor: pointer; }
 
 .status-box {
   padding: 20px;
-  background: rgba(255,255,255,0.05);
+  background: rgba(17, 22, 37, 0.8);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;
   text-align: center;
@@ -1174,16 +1650,22 @@ canvas { display: block; cursor: pointer; }
   transition: all 0.3s;
   color: #fff;
 }
-.btn-ctrl { background: #0f3460; }
+.btn-ctrl { 
+  background: linear-gradient(135deg, #8B7355, #5C4033);
+  border: 1px solid #6B5340;
+}
 .btn-ctrl:hover { opacity: 0.85; }
 .btn-ctrl.resume { background: #4ecca3; }
-.btn-ctrl.undo { background: #f0a500; }
+.btn-ctrl.undo { 
+  background: linear-gradient(135deg, #8B7355, #5C4033);
+  border: 1px solid #6B5340;
+}
 .btn-ctrl.new-game { background: #d4a574; }
 .btn-ctrl:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .legend {
   padding: 16px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(17, 22, 37, 0.75);
   border-radius: 8px;
 }
 .legend-item {
@@ -1191,7 +1673,7 @@ canvas { display: block; cursor: pointer; }
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
-  color: #aaa;
+  color: #e3dcda;
   font-size: 13px;
 }
 .dot {
@@ -1214,6 +1696,12 @@ canvas { display: block; cursor: pointer; }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 棋盘上下悬浮动画 */
+@keyframes floatBoard {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
 }
 
 /* 对话气泡 */
@@ -1258,37 +1746,388 @@ canvas { display: block; cursor: pointer; }
   word-break: break-all;
 }
 
+/* 棋罐装饰 - 圆形木罐 */
+.stone-boxes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.stone-jar {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+}
+/* 角落定位 */
+.stone-jar.corner-tl {
+  top: -35px;
+  left: -35px;
+}
+.stone-jar.corner-tr {
+  top: -35px;
+  right: -35px;
+}
+.stone-jar.corner-bl {
+  bottom: -35px;
+  left: -35px;
+}
+.stone-jar.corner-br {
+  bottom: -35px;
+  right: -35px;
+}
+
+/* 棋罐主体 - 展示更多侧面 */
+.jar-body {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70px;
+  height: 60px;
+  background: linear-gradient(135deg, #3d2817 0%, #5C4033 35%, #6B4F2A 70%, #4a2f1f 100%);
+  border-radius: 50% / 25%;
+  box-shadow: 
+    inset 0 4px 8px rgba(255,255,255,0.15),
+    inset 0 -5px 10px rgba(0,0,0,0.55),
+    4px 5px 12px rgba(0,0,0,0.65);
+  overflow: hidden;
+}
+
+/* 罐口边缘 */
+.jar-rim {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  right: -3px;
+  height: 12px;
+  background: linear-gradient(180deg, #1a0f08 0%, #3d2817 50%, #5C4033 100%);
+  border-radius: 50% / 50%;
+  box-shadow: 
+    inset 0 2px 4px rgba(0,0,0,0.85),
+    0 1px 2px rgba(255,255,255,0.1);
+  z-index: 2;
+}
+
+/* 罐内容物（棋子） */
+.jar-content {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  background: radial-gradient(ellipse at center 30%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.85) 100%);
+  border-radius: 50% / 30%;
+  overflow: hidden;
+}
+
+/* 棋子堆叠效果 - 2x2 排列 */
+.jar-stones {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: 40px;
+  height: 28px;
+}
+
+.jar-stone {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow: 
+    inset 0 1px 2px rgba(255,255,255,0.35),
+    0 1px 2px rgba(0,0,0,0.4);
+}
+.jar-stone.black {
+  background: radial-gradient(circle at 30% 30%, #666, #000);
+}
+.jar-stone.white {
+  background: radial-gradient(circle at 30% 30%, #fff, #aaa);
+  box-shadow: 
+    inset 0 1px 2px rgba(255,255,255,0.6), 
+    inset 0 -1px 2px rgba(0,0,0,0.25);
+}
+.jar-stone.gray {
+  background: radial-gradient(circle at 30% 30%, #bbb, #555);
+}
+
+/* 棋罐盖子 - 斜靠在旁边 */
+.jar-lid {
+  position: absolute;
+  top: -12px;
+  right: -22px;
+  width: 42px;
+  height: 25px;
+  background: linear-gradient(180deg, #5C4033 0%, #3d2817 100%);
+  border-radius: 50% / 30%;
+  transform: rotate(-40deg);
+  box-shadow: 
+    inset 0 1px 3px rgba(255,255,255,0.2),
+    2px 3px 6px rgba(0,0,0,0.55);
+}
+.jar-lid::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.25), transparent);
+  border-radius: 50% / 50%;
+}
+
 /* 玩家快捷语 */
 .player-phrases {
   margin-top: 16px;
   padding: 12px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(17, 22, 37, 0.75);
   border-radius: 8px;
 }
 .phrases-title {
   font-size: 13px;
-  color: #888;
+  color: #d5ced0;
   margin-bottom: 8px;
 }
 .phrases-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 .phrase-btn {
+  min-width: 0;
+  min-height: 36px;
   padding: 6px 4px;
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
-  background: rgba(255,255,255,0.05);
-  color: #ccc;
+  background: rgba(8, 12, 24, 0.5);
+  color: #eee6e4;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .phrase-btn:hover {
   background: rgba(212,165,116,0.2);
   border-color: #d4a574;
   color: #fff;
+}
+
+/* 游戏结束弹窗 */
+.result-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(7, 13, 27, 0.72);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: overlayIn 0.3s ease;
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.result-modal {
+  background: #c0c0c0;
+  border-radius: 16px;
+  padding: 40px 48px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 2px solid #a0a0a0;
+  animation: modalIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  min-width: 300px;
+  max-width: 100%;
+}
+.result-modal.win {
+  border-color: #a0a0a0;
+}
+.result-modal.lose {
+  border-color: #a0a0a0;
+}
+.result-modal.draw {
+  border-color: #a0a0a0;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.8) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.result-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  animation: iconBounce 0.6s ease 0.3s both;
+}
+@keyframes iconBounce {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+.result-title {
+  font-size: 28px;
+  font-weight: bold;
+  color: #222;
+  margin-bottom: 8px;
+  font-family: 'Ma Shan Zheng', 'ZCOOL XiaoWei', serif;
+  letter-spacing: 4px;
+  text-shadow: none;
+}
+.result-modal.win .result-title {
+  color: #222;
+}
+.result-modal.lose .result-title {
+  color: #222;
+}
+.result-modal.draw .result-title {
+  color: #222;
+}
+.result-subtitle {
+  font-size: 14px;
+  color: #444;
+  margin-bottom: 32px;
+}
+.result-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.result-btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+  color: #fff;
+}
+.result-btn.primary {
+  background: linear-gradient(135deg, #8B7355, #5C4033);
+  border: 1px solid #6B5340;
+}
+.result-btn.primary:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+.result-btn.secondary {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  color: #444;
+}
+.result-btn.secondary:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: #666;
+  color: #222;
+  transform: translateY(-1px);
+}
+
+/* 解锁令牌通知弹窗 */
+.notify-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  animation: overlayIn 0.25s ease;
+}
+.notify-modal {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border: 2px solid #4ecca3;
+  border-radius: 16px;
+  padding: 32px 40px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(78, 204, 163, 0.2);
+  animation: notifyIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  min-width: 280px;
+}
+@keyframes notifyIn {
+  from { opacity: 0; transform: scale(0.8) translateY(30px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.notify-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  animation: iconBounce 0.5s ease 0.2s both;
+}
+.notify-title {
+  font-size: 22px;
+  font-weight: bold;
+  color: #4ecca3;
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+}
+.notify-text {
+  font-size: 14px;
+  color: #ccc;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.notify-text strong {
+  color: #4ecca3;
+  font-size: 18px;
+}
+.notify-hint {
+  font-size: 12px;
+  color: #666;
+}
+
+/* AI解锁弹窗（橙色主题） */
+.notify-modal.ai-unlock {
+  border-color: #ff9800;
+  box-shadow: 0 20px 60px rgba(255, 152, 0, 0.2);
+}
+.notify-modal.ai-unlock .notify-title {
+  color: #ff9800;
+}
+
+@media (max-width: 920px) {
+  header { flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+  header h1 { text-align: center; flex: 1; }
+  .header-info { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .header-turn { max-width: min(52vw, 260px); }
+  .game-area { flex-direction: column; align-items: center; gap: 18px; padding: 18px 12px 32px; }
+  .board-wrapper { width: fit-content; max-width: 100%; }
+  .stone-boxes { display: none; }
+  .side-panel { width: min(100%, 590px); }
+  .status-box { margin-bottom: 12px; }
+  .controls { flex-direction: row; flex-wrap: wrap; }
+  .btn-ctrl { flex: 1 1 140px; min-height: 44px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .legend-item { margin: 0; }
+}
+
+@media (max-width: 560px) {
+  header h1 { width: 100%; order: -1; flex: auto; font-size: 17px; }
+  .btn-back { min-height: 40px; }
+  .header-info { width: auto; flex: 1; justify-content: flex-end; gap: 8px; }
+  .header-turn { max-width: 100%; order: 2; width: 100%; text-align: center; }
+  .volume-slider { width: 56px; }
+  .game-area { padding: 14px 10px 24px; }
+  .board-wrapper { padding: 8px; animation: none; }
+  .board-container { padding: 3px; }
+  .status-box { padding: 14px; }
+  .status-icon { font-size: 27px; margin-bottom: 4px; }
+  .result-modal, .notify-modal { width: 100%; min-width: 0; padding: 28px 20px; }
+  .result-buttons { flex-direction: column-reverse; }
+  .result-btn { min-height: 44px; }
+  .bubble { max-width: min(280px, 78vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-wrapper, .status-box.thinking, .bubble-wrapper, .result-overlay,
+  .result-modal, .result-icon, .notify-modal, .notify-icon { animation: none !important; }
 }
 </style>

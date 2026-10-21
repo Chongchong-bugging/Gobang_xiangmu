@@ -14,16 +14,16 @@ public class Score {
     @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
-    @Column(name = "total_score")
+    @Column(name = "total_score", nullable = false)
     private Integer totalScore = 0;
 
-    @Column
+    @Column(nullable = false)
     private Integer wins = 0;
 
-    @Column
+    @Column(nullable = false)
     private Integer losses = 0;
 
-    @Column
+    @Column(nullable = false)
     private Integer draws = 0;
 
     @Column(name = "created_at", updatable = false)

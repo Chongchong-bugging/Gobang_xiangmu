@@ -1,5 +1,6 @@
 package com.gobang.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -14,7 +15,8 @@ public class UserInfo {
     @Column(nullable = false, unique = true, length = 50)
     private String nickname;
 
-    @Column(nullable = false, length = 50)
+    @JsonIgnore
+    @Column(nullable = false, length = 255)
     private String password;
 
     @Column(name = "created_at", updatable = false)

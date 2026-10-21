@@ -13,6 +13,7 @@ public class GobangAI {
 
     private static final int WIN_SCORE = 1000000;
     private static final int MAX_DEPTH_HARD = 3;
+    private static final long HARD_BUDGET_NANOS = 1_800_000_000L;
 
     /**
      * 障碍物模式：生成指定颜色棋子的落子位置（过滤假山、感知水潭）
@@ -52,8 +53,9 @@ public class GobangAI {
 
         // 1. 先检查是否能直接获胜
         for (int[] pos : playable) {
-            b.placeStone(pos[0], pos[1], stoneColor);
-            boolean win = b.checkWin(pos[0], pos[1]);
+            int[] actual = placeSearchStone(b, pos, stoneColor);
+            if (actual == null) continue;
+            boolean win = b.checkWin(actual[0], actual[1]);
             b.undo();
             if (win) return pos;
         }
@@ -63,8 +65,9 @@ public class GobangAI {
         List<int[]> dangerMoves = new ArrayList<>();
         for (int[] pos : playable) {
             for (int opponent : opponents) {
-                b.placeStone(pos[0], pos[1], opponent);
-                boolean danger = b.checkWin(pos[0], pos[1]);
+                int[] actual = placeSearchStone(b, pos, opponent);
+                if (actual == null) continue;
+                boolean danger = b.checkWin(actual[0], actual[1]);
                 b.undo();
                 if (danger) {
                     dangerMoves.add(pos);
@@ -132,7 +135,8 @@ public class GobangAI {
      * 障碍物模式高级AI：Minimax感知地形
      */
     private static int[] obstacleHardMove(GameBoard board, int stoneColor, List<int[]> playable) {
-        long startTime = System.currentTimeMillis();
+        long deadline = System.nanoTime() + HARD_BUDGET_NANOS;
+        playable = rankMoves(board, playable, stoneColor);
         int center = board.getSize() / 2;
         int[] bestMove = playable.get(0);
         int bestScore = Integer.MIN_VALUE;
@@ -144,14 +148,15 @@ public class GobangAI {
             int currentBestScore = Integer.MIN_VALUE;
 
             for (int[] move : playable) {
-                if (System.currentTimeMillis() - startTime > 1800) break;
+                if (System.nanoTime() >= deadline) break;
 
-                board.placeStone(move[0], move[1], stoneColor);
-                if (board.checkWin(move[0], move[1])) {
+                int[] actual = placeSearchStone(board, move, stoneColor);
+                if (actual == null) continue;
+                if (board.checkWin(actual[0], actual[1])) {
                     board.undo();
                     return move;
                 }
-                int score = minimax(board, depth - 1, alpha, beta, false, stoneColor);
+                int score = minimax(board, depth - 1, alpha, beta, false, stoneColor, deadline);
                 board.undo();
 
                 if (score > currentBestScore) {
@@ -161,12 +166,151 @@ public class GobangAI {
                 alpha = Math.max(alpha, score);
             }
 
-            if (System.currentTimeMillis() - startTime > 1800) break;
+            if (System.nanoTime() >= deadline) break;
             bestMove = currentBest;
             bestScore = currentBestScore;
         }
         return bestMove;
     }
+
+    // ==================== 动态棋盘模式AI方法 ====================
+
+    /**
+     * 动态棋盘模式：生成指定颜色棋子的落子位置（只在已解锁区块内落子）
+     */
+    public static int[] generateMoveForDynamic(GameBoard board, String difficulty, int stoneColor) {
+        // 收集所有可落子的空位（只在已解锁区块内）
+        int size = board.getSize();
+        List<int[]> playable = new ArrayList<>();
+        for (int r = 0; r < size; r++) {
+            for (int c = 0; c < size; c++) {
+                if (board.isValidPosition(r, c) && board.getStone(r, c) == GameBoard.EMPTY) {
+                    // 检查是否在已解锁的区块内
+                    if (board.isBlockPlayable(r, c)) {
+                        playable.add(new int[]{r, c});
+                    }
+                }
+            }
+        }
+        if (playable.isEmpty()) return null;
+
+        // 基于难度选择策略
+        switch (difficulty.toUpperCase()) {
+            case "EASY":
+                return dynamicEasyMove(board, stoneColor, playable);
+            case "MEDIUM":
+                return dynamicMediumMove(board, stoneColor, playable);
+            case "HARD":
+                return dynamicHardMove(board, stoneColor, playable);
+            default:
+                return dynamicEasyMove(board, stoneColor, playable);
+        }
+    }
+
+    /**
+     * 动态棋盘模式初级AI：在已解锁区块内随机选择
+     */
+    private static int[] dynamicEasyMove(GameBoard b, int stoneColor, List<int[]> playable) {
+        // 先检查是否能直接获胜
+        for (int[] pos : playable) {
+            b.placeStone(pos[0], pos[1], stoneColor);
+            boolean win = b.checkWin(pos[0], pos[1]);
+            b.undo();
+            if (win) return pos;
+        }
+
+        // 尝试阻挡对方的四连
+        List<Integer> opponents = getOpponents(b, stoneColor);
+        List<int[]> dangerMoves = new ArrayList<>();
+        for (int[] pos : playable) {
+            for (int opponent : opponents) {
+                b.placeStone(pos[0], pos[1], opponent);
+                boolean danger = b.checkWin(pos[0], pos[1]);
+                b.undo();
+                if (danger) {
+                    dangerMoves.add(pos);
+                    break;
+                }
+            }
+        }
+        if (!dangerMoves.isEmpty()) {
+            return dangerMoves.get(new Random().nextInt(dangerMoves.size()));
+        }
+
+        // 随机选择一个可落子位置
+        return playable.get(new Random().nextInt(playable.size()));
+    }
+
+    /**
+     * 动态棋盘模式中级AI：评分算法
+     */
+    private static int[] dynamicMediumMove(GameBoard b, int stoneColor, List<int[]> playable) {
+        int size = b.getSize();
+        int center = size / 2;
+        int[] best = null;
+        int bestScore = -1;
+
+        for (int[] pos : playable) {
+            if (!hasNeighbor(b, pos[0], pos[1], 2)) continue;
+
+            int score = evaluatePosition(b, pos[0], pos[1], stoneColor);
+            for (int opponent : getOpponents(b, stoneColor)) {
+                score += evaluatePosition(b, pos[0], pos[1], opponent);
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = pos;
+            }
+        }
+
+        if (best == null) {
+            best = playable.get(new Random().nextInt(playable.size()));
+        }
+        return best;
+    }
+
+    /**
+     * 动态棋盘模式高级AI：Minimax算法
+     */
+    private static int[] dynamicHardMove(GameBoard board, int stoneColor, List<int[]> playable) {
+        long deadline = System.nanoTime() + HARD_BUDGET_NANOS;
+        playable = rankMoves(board, playable, stoneColor);
+        int[] bestMove = playable.get(0);
+        int bestScore = Integer.MIN_VALUE;
+
+        for (int depth = 1; depth <= MAX_DEPTH_HARD; depth++) {
+            int alpha = Integer.MIN_VALUE;
+            int beta = Integer.MAX_VALUE;
+            int[] currentBest = playable.get(0);
+            int currentBestScore = Integer.MIN_VALUE;
+
+            for (int[] move : playable) {
+                if (System.nanoTime() >= deadline) break;
+
+                int[] actual = placeSearchStone(board, move, stoneColor);
+                if (actual == null) continue;
+                if (board.checkWin(actual[0], actual[1])) {
+                    board.undo();
+                    return move;
+                }
+                int score = minimax(board, depth - 1, alpha, beta, false, stoneColor, deadline);
+                board.undo();
+
+                if (score > currentBestScore) {
+                    currentBestScore = score;
+                    currentBest = move;
+                }
+                alpha = Math.max(alpha, score);
+            }
+
+            if (System.nanoTime() >= deadline) break;
+            bestMove = currentBest;
+            bestScore = currentBestScore;
+        }
+        return bestMove;
+    }
+
+    // ==================== 动态棋盘模式AI方法结束 ====================
 
     /**
      * 生成AI的落子位置（默认白子，向后兼容）
@@ -179,6 +323,7 @@ public class GobangAI {
      * 生成指定颜色棋子的落子位置（支持三人模式）
      */
     public static int[] generateMove(GameBoard board, String difficulty, int stoneColor) {
+        if (board == null || board.isFull()) return null;
         switch (difficulty.toUpperCase()) {
             case "EASY": return easyMove(board, stoneColor);
             case "MEDIUM": return mediumMove(board, stoneColor);
@@ -325,28 +470,29 @@ public class GobangAI {
 
     // ============ 高级: Minimax + Alpha-Beta剪枝 ============
     private static int[] hardMove(GameBoard board, int stoneColor) {
-        long startTime = System.currentTimeMillis();
-        int center = board.getSize() / 2;
-        int[] bestMove = new int[]{center, center};
+        long deadline = System.nanoTime() + HARD_BUDGET_NANOS;
         int bestScore = Integer.MIN_VALUE;
 
-        List<int[]> candidates = getCandidateMoves(board, stoneColor);
+        List<int[]> candidates = getCandidateMoves(board, stoneColor, deadline);
+        if (candidates.isEmpty()) return null;
+        int[] bestMove = candidates.get(0);
 
         for (int depth = 1; depth <= MAX_DEPTH_HARD; depth++) {
             int alpha = Integer.MIN_VALUE;
             int beta = Integer.MAX_VALUE;
-            int[] currentBest = new int[]{center, center};
+            int[] currentBest = candidates.get(0);
             int currentBestScore = Integer.MIN_VALUE;
 
             for (int[] move : candidates) {
-                if (System.currentTimeMillis() - startTime > 1800) break;
+                if (System.nanoTime() >= deadline) break;
 
-                board.placeStone(move[0], move[1], stoneColor);
-                if (board.checkWin(move[0], move[1])) {
+                int[] actual = placeSearchStone(board, move, stoneColor);
+                if (actual == null) continue;
+                if (board.checkWin(actual[0], actual[1])) {
                     board.undo();
                     return move;
                 }
-                int score = minimax(board, depth - 1, alpha, beta, false, stoneColor);
+                int score = minimax(board, depth - 1, alpha, beta, false, stoneColor, deadline);
                 board.undo();
 
                 if (score > currentBestScore) {
@@ -356,36 +502,40 @@ public class GobangAI {
                 alpha = Math.max(alpha, score);
             }
 
-            if (System.currentTimeMillis() - startTime > 1800) break;
+            if (System.nanoTime() >= deadline) break;
             bestMove = currentBest;
             bestScore = currentBestScore;
         }
         return bestMove;
     }
 
-    private static int minimax(GameBoard board, int depth, int alpha, int beta, boolean isMaximizing, int stoneColor) {
-        if (depth == 0) {
+    private static int minimax(GameBoard board, int depth, int alpha, int beta,
+                               boolean isMaximizing, int stoneColor, long deadline) {
+        if (depth == 0 || System.nanoTime() >= deadline) {
             return evaluateBoard(board, stoneColor);
         }
 
-        List<int[]> candidates = getCandidateMoves(board, stoneColor);
+        List<int[]> candidates = getCandidateMoves(board, stoneColor, deadline);
+        if (candidates.isEmpty()) return evaluateBoard(board, stoneColor);
         List<Integer> opponents = getOpponents(board, stoneColor);
 
         if (isMaximizing) {
             int maxEval = Integer.MIN_VALUE;
             for (int[] move : candidates) {
-                board.placeStone(move[0], move[1], stoneColor);
-                if (board.checkWin(move[0], move[1])) {
+                if (System.nanoTime() >= deadline) break;
+                int[] actual = placeSearchStone(board, move, stoneColor);
+                if (actual == null) continue;
+                if (board.checkWin(actual[0], actual[1])) {
                     board.undo();
                     return WIN_SCORE / depth;
                 }
-                int eval = minimax(board, depth - 1, alpha, beta, false, stoneColor);
+                int eval = minimax(board, depth - 1, alpha, beta, false, stoneColor, deadline);
                 board.undo();
                 maxEval = Math.max(maxEval, eval);
                 alpha = Math.max(alpha, eval);
                 if (beta <= alpha) break;
             }
-            return maxEval;
+            return maxEval == Integer.MIN_VALUE ? evaluateBoard(board, stoneColor) : maxEval;
         } else {
             // 简化：使用第一个对手作为 minimax 的对手方
             int opponent = opponents.isEmpty() ?
@@ -393,18 +543,20 @@ public class GobangAI {
                     opponents.get(0);
             int minEval = Integer.MAX_VALUE;
             for (int[] move : candidates) {
-                board.placeStone(move[0], move[1], opponent);
-                if (board.checkWin(move[0], move[1])) {
+                if (System.nanoTime() >= deadline) break;
+                int[] actual = placeSearchStone(board, move, opponent);
+                if (actual == null) continue;
+                if (board.checkWin(actual[0], actual[1])) {
                     board.undo();
                     return -WIN_SCORE / depth;
                 }
-                int eval = minimax(board, depth - 1, alpha, beta, true, stoneColor);
+                int eval = minimax(board, depth - 1, alpha, beta, true, stoneColor, deadline);
                 board.undo();
                 minEval = Math.min(minEval, eval);
                 beta = Math.min(beta, eval);
                 if (beta <= alpha) break;
             }
-            return minEval;
+            return minEval == Integer.MAX_VALUE ? evaluateBoard(board, stoneColor) : minEval;
         }
     }
 
@@ -432,17 +584,18 @@ public class GobangAI {
         return stoneScore - opponentScore;
     }
 
-    private static List<int[]> getCandidateMoves(GameBoard board, int stoneColor) {
+    private static List<int[]> getCandidateMoves(GameBoard board, int stoneColor, long deadline) {
         List<int[]> moves = new ArrayList<>();
         int size = board.getSize();
         int center = size / 2;
 
         if (board.moveCount() == 0) {
-            moves.add(new int[]{center, center});
+            if (board.isPlayable(center, center)) moves.add(new int[]{center, center});
             return moves;
         }
 
         for (int r = 0; r < size; r++) {
+            if (System.nanoTime() >= deadline) break;
             for (int c = 0; c < size; c++) {
                 // 使用 isPlayable 过滤假山位置
                 if (!board.isPlayable(r, c)) continue;
@@ -452,18 +605,32 @@ public class GobangAI {
             }
         }
 
-        moves.sort((a, b) -> {
-            List<Integer> opponents = getOpponents(board, stoneColor);
-            int sa = evaluatePosition(board, a[0], a[1], stoneColor);
-            int sb = evaluatePosition(board, b[0], b[1], stoneColor);
-            for (int opponent : opponents) {
-                sa += evaluatePosition(board, a[0], a[1], opponent);
-                sb += evaluatePosition(board, b[0], b[1], opponent);
-            }
-            return sb - sa;
-        });
+        return rankMoves(board, moves, stoneColor);
+    }
 
-        return moves.size() > 15 ? moves.subList(0, 15) : moves;
+    private static List<int[]> rankMoves(GameBoard board, List<int[]> moves, int stoneColor) {
+        List<Integer> opponents = getOpponents(board, stoneColor);
+        List<ScoredMove> ranked = new ArrayList<>(moves.size());
+        for (int[] move : moves) {
+            int score = evaluatePosition(board, move[0], move[1], stoneColor);
+            for (int opponent : opponents) {
+                score += evaluatePosition(board, move[0], move[1], opponent);
+            }
+            ranked.add(new ScoredMove(move, score));
+        }
+        ranked.sort(Comparator.comparingInt(ScoredMove::score).reversed());
+        List<int[]> best = new ArrayList<>(Math.min(15, ranked.size()));
+        for (int i = 0; i < ranked.size() && i < 15; i++) best.add(ranked.get(i).position());
+        return best;
+    }
+
+    private record ScoredMove(int[] position, int score) {}
+
+    private static int[] placeSearchStone(GameBoard board, int[] position, int color) {
+        if (board.getTerrainAt(position[0], position[1]) == GameBoard.WATER) {
+            return board.placeStoneObstacle(position[0], position[1], color);
+        }
+        return board.placeStone(position[0], position[1], color) ? position : null;
     }
 
     private static boolean hasNeighbor(GameBoard board, int row, int col, int distance) {

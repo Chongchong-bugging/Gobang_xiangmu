@@ -1,0 +1,10 @@
+com\gobang\ai\GobangAITest.class
+com\gobang\service\GameServiceTest.class
+com\gobang\ai\SpecialBoardModeTest.class
+com\gobang\service\ScoreSettlementServiceTest.class
+com\gobang\migration\FlywayMigrationTest.class
+com\gobang\service\GameStateStoreTest.class
+com\gobang\service\UserServiceTest.class
+com\gobang\config\SecurityConfigTest.class
+com\gobang\ai\GameBoardTest.class
+com\gobang\security\RequestRateLimiterTest.class

@@ -1,0 +1,23 @@
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    baseline-on-migrate: false
+
+app:
+  security:
+    secure-cookie: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

@@ -11,25 +11,5 @@ CREATE DATABASE IF NOT EXISTS gobang_db
 
 USE gobang_db;
 
--- 用户信息表
-CREATE TABLE IF NOT EXISTS user_info (
-    id          BIGINT          AUTO_INCREMENT PRIMARY KEY,
-    nickname    VARCHAR(50)     NOT NULL UNIQUE,
-    password    VARCHAR(50)     NOT NULL,
-    created_at  DATETIME        NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 积分表
-CREATE TABLE IF NOT EXISTS score (
-    id          BIGINT          AUTO_INCREMENT PRIMARY KEY,
-    user_id     BIGINT          NOT NULL UNIQUE,
-    total_score INT             DEFAULT 0,
-    wins        INT             DEFAULT 0,
-    losses      INT             DEFAULT 0,
-    draws       INT             DEFAULT 0,
-    created_at  DATETIME        NULL,
-    updated_at  DATETIME        NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 完成提示
-SELECT '✅ gobang_db 数据库和表已创建成功！' AS message;
+-- 表结构和后续升级由 Spring Boot 启动时的 Flyway 迁移统一管理。
+SELECT '✅ gobang_db 数据库已创建，数据表将由 Flyway 初始化！' AS message;

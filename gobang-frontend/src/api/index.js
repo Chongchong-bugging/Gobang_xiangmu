@@ -3,29 +3,44 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
-  withCredentials: true
+  withCredentials: true,
+  withXSRFToken: true,
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN'
 })
+
+function handleUnauthorized() {
+  sessionStorage.removeItem('user')
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
 
 // 响应拦截器
 api.interceptors.response.use(
   response => {
     const data = response.data
     if (data.code === 401) {
-      sessionStorage.removeItem('user')
-      window.location.href = '/login'
+      handleUnauthorized()
     }
     return data
   },
   error => {
     // 输出真实错误信息到控制台，方便排查
     console.error('[API Error]', error)
+    const backendData = error.response?.data
+    if (backendData && typeof backendData.code === 'number') {
+      if (backendData.code === 401) handleUnauthorized()
+      return backendData
+    }
+
     let msg = '系统维护中'
     if (error.code === 'ECONNABORTED') {
-      msg = '请求超时，请检查后端是否启动'
+      msg = '请求超时，请检查应用服务是否正常'
     } else if (error.response) {
       msg = `后端错误(${error.response.status}): ${JSON.stringify(error.response.data)}`
     } else if (error.request) {
-      msg = '无法连接后端，请确认后端是否已启动（端口8080）'
+      msg = '无法连接服务，请确认 Docker 应用是否已启动'
     }
     return { code: 500, message: msg, data: null }
   }
@@ -33,9 +48,18 @@ api.interceptors.response.use(
 
 // ===== 用户 API =====
 export const userApi = {
+  getCsrf: () => api.get('/user/csrf'),
   register: (data) => api.post('/user/register', data),
-  login: (data) => api.post('/user/login', data),
-  logout: () => api.post('/user/logout'),
+  login: async (data) => {
+    const result = await api.post('/user/login', data)
+    if (result.code === 200) await api.get('/user/csrf')
+    return result
+  },
+  logout: async () => {
+    const result = await api.post('/user/logout')
+    await api.get('/user/csrf')
+    return result
+  },
   getInfo: () => api.get('/user/info')
 }
 
@@ -47,7 +71,8 @@ export const gameApi = {
   undo: () => api.post('/game/undo'),
   pause: () => api.post('/game/pause'),
   resume: () => api.post('/game/resume'),
-  getState: () => api.get('/game/state')
+  getState: () => api.get('/game/state'),
+  unlockBlock: (blockRow, blockCol) => api.post('/game/unlock-block', { blockRow, blockCol })
 }
 
 // ===== 得分 API =====

@@ -1,6 +1,7 @@
 # 依赖文件
 node_modules/
 vendor/
+.m2repo/
 
 # 音频文件
 *.mp3
@@ -13,6 +14,9 @@ vendor/
 *.jpeg
 *.png
 *.gif
+
+# Frontend runtime assets must be versioned for reproducible Docker builds.
+!gobang-frontend/public/**
 
 # 日志文件
 *.log
@@ -38,8 +42,12 @@ temp/
 # 构建文件
 dist/
 build/
+target/
 *.exe
 
 # 环境变量
 .env
 .env.local
+
+# Local database exports contain account data; never commit them.
+/backups/

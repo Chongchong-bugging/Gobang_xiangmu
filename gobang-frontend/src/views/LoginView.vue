@@ -48,7 +48,7 @@
       <div class="greeting-section">
         <div class="greeting">{{ greeting }}</div>
         <div class="poem">
-          <p>棋盘纵横十九路</p>
+          <p>方寸棋盘争先手</p>
           <p>黑白交错定乾坤</p>
         </div>
         <div class="welcome-text">
@@ -68,9 +68,9 @@
     <!-- 右侧登录表单 -->
     <div class="login-card">
       <div class="logo-section">
-        <h1>五子棋 AI 对战</h1>
+        <h1>五子棋</h1>
       </div>
-      <p class="subtitle">经典五子棋 · 人机对战 · 三种难度</p>
+      <p class="subtitle">{{ isLogin ? '登录后继续对弈' : '创建账号，开始对弈' }}</p>
 
       <!-- 装饰性小棋盘 -->
       <div class="mini-board">
@@ -94,12 +94,21 @@
 
       <form @submit.prevent="handleSubmit" class="form">
         <div class="input-group">
-          <label>昵称</label>
-          <input v-model="nickname" placeholder="请输入昵称" required maxlength="50" />
+          <label for="nickname">昵称</label>
+          <input id="nickname" v-model="nickname" autocomplete="username" placeholder="请输入昵称" required :minlength="isLogin ? 1 : 2" maxlength="50" />
         </div>
         <div class="input-group">
-          <label>密码</label>
-          <input v-model="password" type="password" placeholder="请输入密码" required />
+          <label for="password">密码</label>
+          <input
+            id="password"
+            v-model="password"
+            type="password"
+            :autocomplete="isLogin ? 'current-password' : 'new-password'"
+            :placeholder="isLogin ? '请输入密码' : '请输入密码（8-64位）'"
+            required
+            :minlength="isLogin ? 1 : 8"
+            maxlength="64"
+          />
         </div>
         <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
         <div v-if="successMsg" class="success">{{ successMsg }}</div>
@@ -206,25 +215,59 @@ onMounted(() => {
     currentHour.value = new Date().getHours()
   }, 60000) // 每分钟更新一次
   
-  // 自动初始化并播放登录界面音乐
+  // 自动初始化音乐
   initBgMusic()
-  // 尝试自动播放
-  bgMusic.value.play().then(() => {
-    bgMusicPlaying.value = true
-  }).catch(() => {
-    // 如果自动播放失败，等待用户交互
-    console.log('需要用户交互才能播放音乐')
-  })
+  
+  // 尝试自动播放（可能被浏览器阻止）
+  tryAutoPlayMusic()
+  
+  // 添加用户交互监听器（解决浏览器自动播放策略）
+  addUserInteractionListener()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
   // 不停止音乐，让音乐继续在大厅播放
+  
+  // 移除用户交互监听器
+  document.removeEventListener('click', handleFirstInteraction)
 })
 
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
+// 尝试自动播放音乐
+function tryAutoPlayMusic() {
+  if (!bgMusic.value) return
+  
+  bgMusic.value.play().then(() => {
+    bgMusicPlaying.value = true
+  }).catch(() => {
+    // 自动播放被阻止，等待用户交互
+    console.log('浏览器阻止了自动播放，等待用户交互')
+  })
+}
+
+// 处理第一次用户交互
+function handleFirstInteraction() {
+  if (!bgMusic.value) initBgMusic()
+  
+  if (bgMusic.value && bgMusic.value.paused) {
+    bgMusic.value.play().then(() => {
+      bgMusicPlaying.value = true
+    }).catch(err => {
+      console.warn('音乐播放失败:', err)
+    })
+  }
+  
+  // 只执行一次
+  document.removeEventListener('click', handleFirstInteraction)
+}
+
+// 添加用户交互监听器
+function addUserInteractionListener() {
+  // 延迟添加监听器，避免与当前点击事件冲突
+  setTimeout(() => {
+    document.addEventListener('click', handleFirstInteraction, { once: true })
+  }, 100)
+}
 
 // 根据时间计算问候语
 const greeting = computed(() => {
@@ -316,12 +359,12 @@ async function handleSubmit() {
   left: 0;
   right: 0;
   bottom: 0;
-  background-image: url('/ancient-bg.webp');
+  background-image: url('/ink-landscape-v2.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   z-index: 0;
-  animation: bgSlowZoom 60s ease-in-out infinite alternate;
+  /* Keep the ink details sharp instead of continuously scaling the image. */
 }
 
 @keyframes bgSlowZoom {
@@ -336,10 +379,10 @@ async function handleSubmit() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg,
-    rgba(10, 10, 30, 0.6) 0%,
-    rgba(20, 20, 50, 0.5) 50%,
-    rgba(10, 10, 30, 0.6) 100%
+  background: linear-gradient(90deg,
+    rgba(25, 27, 31, 0.46) 0%,
+    rgba(30, 31, 35, 0.38) 55%,
+    rgba(30, 31, 35, 0.47) 100%
   );
   z-index: 1;
 }
@@ -617,104 +660,66 @@ async function handleSubmit() {
 
 /* 登录卡片 */
 .login-card {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(25px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  padding: 40px 40px 45px;
+  background: rgba(222, 213, 199, 0.9);
+  border: 1px solid #aa9b88;
+  border-radius: 12px;
+  padding: 32px 36px 36px;
   width: 420px;
   text-align: center;
   position: relative;
   z-index: 10;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 100px rgba(100, 100, 200, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  animation: cardFadeIn 0.8s ease-out;
-}
-
-@keyframes cardFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  box-shadow: 0 10px 28px rgba(43, 36, 29, 0.13);
 }
 
 .logo-section {
-  margin-bottom: 10px;
-}
-
-.logo-icon {
-  font-size: 56px;
-  margin-bottom: 8px;
-  animation: logoFloat 3s ease-in-out infinite;
-  filter: drop-shadow(0 4px 10px rgba(212, 165, 116, 0.3));
-}
-
-@keyframes logoFloat {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+  margin-bottom: 4px;
 }
 
 h1 {
   font-family: 'Ma Shan Zheng', 'ZCOOL XiaoWei', serif;
-  font-size: 32px;
-  margin-bottom: 8px;
-  background: linear-gradient(135deg, #e8c4a0, #d4a574, #c49060);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 34px;
+  margin-bottom: 4px;
+  color: #3d3028;
   font-weight: normal;
-  letter-spacing: 4px;
-  text-shadow: none;
+  letter-spacing: 5px;
 }
 
 .subtitle {
-  font-family: 'ZCOOL XiaoWei', serif;
-  color: rgba(200, 200, 220, 0.6);
-  font-size: 14px;
-  margin-bottom: 28px;
-  letter-spacing: 3px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: #74685d;
+  font-size: 13px;
+  margin-bottom: 20px;
+  letter-spacing: 1px;
 }
 
 .tabs {
   display: flex;
-  gap: 0;
-  margin-bottom: 28px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 24px;
+  border-bottom: 1px solid #b8aa98;
 }
 
 .tabs button {
   flex: 1;
-  padding: 11px;
+  min-height: 44px;
+  padding: 10px 8px;
   border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
-  color: rgba(200, 200, 220, 0.6);
+  color: #766b60;
   cursor: pointer;
-  font-size: 15px;
-  font-family: 'ZCOOL XiaoWei', serif;
-  font-weight: normal;
-  letter-spacing: 2px;
-  transition: all 0.3s ease;
+  font-size: 14px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  transition: color 0.2s, border-color 0.2s;
 }
 
 .tabs button.active {
-  background: linear-gradient(135deg, rgba(232, 196, 160, 0.3), rgba(212, 165, 116, 0.3));
-  color: #e8c4a0;
-  box-shadow: 0 2px 10px rgba(232, 196, 160, 0.15);
-  border: 1px solid rgba(232, 196, 160, 0.2);
+  color: #4f392b;
+  border-bottom-color: #74543c;
+  font-weight: 700;
 }
 
 .tabs button:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(200, 200, 220, 0.8);
+  color: #4f392b;
 }
 
 .form { text-align: left; }
@@ -725,111 +730,95 @@ h1 {
   display: block;
   margin-bottom: 8px;
   font-size: 14px;
-  font-family: 'ZCOOL XiaoWei', serif;
-  color: rgba(200, 200, 220, 0.7);
-  letter-spacing: 2px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: #493f37;
 }
 
 .input-group input {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #eee;
+  border: 1px solid #ab9d8b;
+  border-radius: 6px;
+  background: rgba(246, 240, 230, 0.82);
+  color: #342d28;
   font-size: 14px;
-  font-family: 'ZCOOL XiaoWei', serif;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
   outline: none;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
 }
 
 .input-group input:focus {
-  border-color: rgba(212, 165, 116, 0.5);
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.08);
+  border-color: #8b6749;
+  box-shadow: 0 0 0 3px rgba(139, 103, 73, 0.13);
 }
 
 .input-group input::placeholder {
-  color: rgba(200, 200, 220, 0.3);
-  font-family: 'ZCOOL XiaoWei', serif;
+  color: #908477;
 }
 
 .error {
-  color: #d4a574;
+  color: #8a3d32;
   font-size: 13px;
   margin-bottom: 16px;
   text-align: center;
   padding: 8px 12px;
-  background: rgba(212, 165, 116, 0.08);
-  border-radius: 8px;
-  border: 1px solid rgba(212, 165, 116, 0.15);
-  font-family: 'ZCOOL XiaoWei', serif;
+  background: #f7e9e3;
+  border-radius: 6px;
+  border: 1px solid #e5c5b8;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
 
 .success {
-  color: #4ecca3;
+  color: #35694e;
   font-size: 14px;
   margin-bottom: 16px;
   text-align: center;
   padding: 8px 12px;
-  background: rgba(78, 204, 163, 0.08);
-  border-radius: 8px;
-  border: 1px solid rgba(78, 204, 163, 0.15);
-  font-family: 'ZCOOL XiaoWei', serif;
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
+  background: #e8f1e9;
+  border-radius: 6px;
+  border: 1px solid #bcd6c2;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
 
 .btn-primary {
   width: 100%;
-  padding: 13px;
-  border: 1px solid rgba(232, 196, 160, 0.3);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(232, 196, 160, 0.2), rgba(212, 165, 116, 0.2));
-  color: #e8c4a0;
+  min-height: 46px;
+  padding: 11px;
+  border: 1px solid #76604d;
+  border-radius: 6px;
+  background: #76604d;
+  color: #fff8ef;
   font-size: 16px;
-  font-family: 'Ma Shan Zheng', 'ZCOOL XiaoWei', serif;
-  letter-spacing: 4px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-weight: 600;
+  letter-spacing: 1px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(232, 196, 160, 0.1);
+  transition: background 0.2s;
   margin-top: 5px;
 }
 
 .btn-primary:hover {
-  transform: translateY(-2px);
-  background: linear-gradient(135deg, rgba(232, 196, 160, 0.3), rgba(212, 165, 116, 0.3));
-  box-shadow: 0 6px 20px rgba(232, 196, 160, 0.15);
-  border-color: rgba(232, 196, 160, 0.5);
+  background: #614b3a;
 }
 
-.btn-primary:active {
-  transform: translateY(0px);
-}
+.btn-primary:focus-visible, .tabs button:focus-visible { outline: 3px solid #a7784e; outline-offset: 3px; }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  transform: none;
 }
 
 /* 装饰性小棋盘 */
 .mini-board {
   display: flex;
   justify-content: center;
-  margin: 15px auto 20px;
+  margin: 15px auto 22px;
   padding: 10px;
-  background: rgba(139, 90, 43, 0.15);
-  border-radius: 8px;
-  border: 1px solid rgba(139, 90, 43, 0.25);
-  backdrop-filter: blur(5px);
+  background: #d7c0a0;
+  border-radius: 4px;
+  border: 1px solid #a78761;
   width: fit-content;
-  animation: boardFloat 4s ease-in-out infinite;
 }
 
 /* 登录界面音乐控制按钮 */
@@ -868,19 +857,14 @@ h1 {
   transform: scale(1.1);
 }
 
-@keyframes boardFloat {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
 .board-grid {
   display: flex;
   flex-direction: column;
   gap: 0;
   padding: 5px;
-  background: rgba(210, 180, 140, 0.25);
-  border-radius: 4px;
-  border: 1px solid rgba(139, 90, 43, 0.3);
+  background: #c7a97f;
+  border-radius: 2px;
+  border: 1px solid #927353;
 }
 
 .board-row {
@@ -914,27 +898,39 @@ h1 {
   height: 14px;
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  animation: pieceAppear 0.5s ease-out backwards;
 }
 
 .board-cell.black .piece-on-board {
   background: radial-gradient(circle at 35% 35%, #555, #000);
-  animation-delay: 0.1s;
 }
 
 .board-cell.white .piece-on-board {
   background: radial-gradient(circle at 35% 35%, #fff, #ddd);
-  animation-delay: 0.2s;
 }
 
-@keyframes pieceAppear {
-  from {
-    transform: translate(-50%, -50%) scale(0);
-    opacity: 0;
+@media (max-width: 1100px) {
+  .login-page {
+    min-height: 100dvh;
+    justify-content: center;
+    padding: 82px 20px 32px;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
-  to {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 1;
-  }
+  .left-decoration { display: none; }
+  .login-card { width: min(100%, 420px); }
+}
+
+@media (max-width: 480px) {
+  .login-page { align-items: flex-start; padding: 76px 14px 24px; }
+  .login-card { padding: 26px 20px 30px; border-radius: 16px; }
+  .logo-section h1 { font-size: 27px; letter-spacing: 2px; }
+  .subtitle { letter-spacing: 1px; }
+  .music-control-login { top: 14px; right: 14px; }
+  .music-btn-login { width: 44px; height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-image, .bamboo-leaves .leaf, .flower, .piece,
+  .greeting, .login-card, .mini-board { animation: none !important; }
 }
 </style>

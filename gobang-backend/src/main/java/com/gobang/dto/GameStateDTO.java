@@ -1,7 +1,8 @@
 package com.gobang.dto;
 
 public class GameStateDTO {
-    private Long gameId;
+    private String gameId;
+    private long revision;
     private int[][] board;
     private int[][] terrain;     // 地形数据: 0=无, 4=假山, 5=水潭 (障碍物模式)
     private String status;      // WAITING, PLAYER_TURN, AI_THINKING, PLAYER_WIN, AI_WIN, WHITE_WIN, GRAY_WIN, DRAW, PAUSED
@@ -9,11 +10,17 @@ public class GameStateDTO {
     private int undoRemaining;
     private boolean paused;
     private String message;
-    private String gameMode;     // "TWO", "THREE" or "OBSTACLE"
+    private String gameMode;     // "TWO", "THREE", "OBSTACLE" or "THREE_OBSTACLE"
     private Integer currentTurn; // BLACK, WHITE, or GRAY (三人模式用)
+    
+    // 动态棋盘模式新增字段
+    private int[][] blockStates;    // 5x5区块状态数组
+    private int unlockTokens;       // 玩家可用的解锁令牌数
 
-    public Long getGameId() { return gameId; }
-    public void setGameId(Long gameId) { this.gameId = gameId; }
+    public String getGameId() { return gameId; }
+    public void setGameId(String gameId) { this.gameId = gameId; }
+    public long getRevision() { return revision; }
+    public void setRevision(long revision) { this.revision = revision; }
 
     public int[][] getBoard() { return board; }
     public void setBoard(int[][] board) { this.board = board; }
@@ -41,4 +48,11 @@ public class GameStateDTO {
 
     public Integer getCurrentTurn() { return currentTurn; }
     public void setCurrentTurn(Integer currentTurn) { this.currentTurn = currentTurn; }
+
+    // 动态棋盘模式getter/setter
+    public int[][] getBlockStates() { return blockStates; }
+    public void setBlockStates(int[][] blockStates) { this.blockStates = blockStates; }
+
+    public int getUnlockTokens() { return unlockTokens; }
+    public void setUnlockTokens(int unlockTokens) { this.unlockTokens = unlockTokens; }
 }

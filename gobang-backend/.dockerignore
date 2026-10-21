@@ -1,0 +1,9 @@
+target/
+.m2repo/
+*.log
+*.txt
+.idea/
+.vscode/
+.git/
+.gitignore
+Dockerfile*
